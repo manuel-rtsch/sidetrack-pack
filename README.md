@@ -18,11 +18,15 @@ updates**, because the Library is a privileged system installer.
 QR lives at `/fdroid/repo/index.png`; `fdroid update` writes it, encoding the
 address plus `?fingerprint=…`, so it is never drawn by hand)
 
-**Fingerprint (SHA-256):** _not published yet — it appears here and on the
-install page once the first publish has run. Generate it with
-`./scripts/fingerprint.sh`; never type it from anywhere else. The publish
-workflow injects it into `web/index.html` from the built index, so the page
-cannot disagree with what a client pins._
+**Fingerprint (SHA-256):**
+
+```
+07E18BC404C077F38C71CE05FD953E0077CBE73687A843FFF3A35B10FAE17488
+```
+
+The install page gets this value injected at deploy time from the built index
+(`scripts/fingerprint.sh`), so it cannot drift from what a client pins. Derive
+it again, do not retype it.
 
 The Library shows this as it adds the pack, and checks every update against it
 afterwards without asking. Confirm it against the live index at any time:
