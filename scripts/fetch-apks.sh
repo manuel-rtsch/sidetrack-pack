@@ -53,7 +53,11 @@ while read -r name package gh_repo asset_glob; do
     continue
   fi
 
-  tags=$(printf '%s\n' "$releases" | grep -v '^$' | head -n "$KEEP_RELEASES" || true)
+  # Only clean release tags. A Sidetrack release tag is `v<major>.<minor>.<patch>`;
+  # a `-rc1`/`-beta` build is not marked prerelease on GitHub, so the flag alone
+  # is not enough. The pack must never offer a candidate build as an update.
+  tags=$(printf '%s\n' "$releases" | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+    | head -n "$KEEP_RELEASES" || true)
   if [ -z "$tags" ]; then
     echo "    no release yet — skipping"
     skipped="$skipped $name"
