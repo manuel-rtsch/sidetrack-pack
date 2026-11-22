@@ -146,11 +146,16 @@ gh secret set KEYPASS      -R manuel-rtsch/sidetrack-pack < ../sidetrack-pack-se
 gh secret list -R manuel-rtsch/sidetrack-pack
 ```
 
-**4. Release → pack trigger.** Copy `integrations/notify-app-pack.yml` to
-`.github/workflows/notify-app-pack.yml` in `manuel-rtsch/Sidetrack`, then create a
-fine-grained PAT with `contents: write` on `manuel-rtsch/sidetrack-pack` and
-store it there as `APP_PACK_DISPATCH_TOKEN`. Without it the pack still updates
+**4. Release → pack trigger.** Sidetrack's `release.yml` already ends with a
+"Notify the app pack" step (documented in `integrations/release-step.yml`). It
+needs a fine-grained PAT with `contents: write` on
+`manuel-rtsch/sidetrack-pack` and nothing else, stored in **Sidetrack** as
+`APP_PACK_DISPATCH_TOKEN`. Without it the step warns and the pack still updates
 on the weekly cron; with it, minutes after a release.
+
+   It is a step in the release workflow, not a release-triggered
+   workflow, because an event produced with `GITHUB_TOKEN` does not start another
+   workflow — a release-triggered workflow would never fire for CI-cut releases.
 
 **5. First publish.** Actions → **Publish App Pack** → Run workflow. Then take
 the fingerprint from the job summary (`./scripts/fingerprint.sh` prints the same
@@ -158,13 +163,17 @@ value) and put it in this README. The site page is filled in automatically.
 
 ## Publishing after a release
 
-Automatic via the dispatch. Manual:
+Automatic via the dispatch from Sidetrack's release workflow. Manual:
 
 ```sh
 gh workflow run "Publish App Pack" -R manuel-rtsch/sidetrack-pack
 ```
 
-The weekly schedule is the safety net.
+The weekly schedule is the safety net, and it is what catches a release whose
+dispatch was skipped.
+
+A publish always rebuilds from whatever GitHub Releases currently holds, so
+re-running it is safe and idempotent — there is no state to reconcile.
 
 ## Building locally
 

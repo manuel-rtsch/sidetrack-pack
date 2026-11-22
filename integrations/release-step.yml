@@ -1,0 +1,42 @@
+# The "Notify the app pack" step in manuel-rtsch/Sidetrack's
+# .github/workflows/release.yml. Kept here so both halves of the contract are
+# edited in one place; this copy is documentation, not something that runs.
+#
+# Why a step and not a release-triggered workflow in the Sidetrack repo:
+# an event produced with GITHUB_TOKEN does not start another workflow, and the
+# release workflow publishes with GITHUB_TOKEN. A separate release-triggered
+# workflow would therefore never fire for real releases — it would only catch
+# releases cut by hand in the web UI or with a personal token.
+#
+# Why repository_dispatch and not the pack's own cron alone: the cron is weekly,
+# and a release should reach SP-01 users within minutes. The cron stays as the
+# safety net for when this step is skipped or its token is missing.
+#
+# Required secret in manuel-rtsch/Sidetrack:
+#   APP_PACK_DISPATCH_TOKEN — a fine-grained PAT with contents:write on
+#   manuel-rtsch/sidetrack-pack and nothing else.
+#
+# `continue-on-error` plus the explicit warning exist because a missing token
+# must not turn a completed release into a failed workflow. The release is
+# done by the time this runs; this only changes how soon the pack notices.
+
+- name: Notify the app pack
+  continue-on-error: true
+  env:
+    TOKEN: ${{ secrets.APP_PACK_DISPATCH_TOKEN }}
+  run: |
+    if [ -z "$TOKEN" ]; then
+      echo "::warning::APP_PACK_DISPATCH_TOKEN is not set; the app pack will pick this" \
+           "release up on its weekly cron. See docs/releasing.md."
+      exit 0
+    fi
+    # The pack build is stateless — it always fetches whatever the latest release
+    # is — so the payload carries no version. A tag name never becomes part of
+    # the command.
+    curl --fail-with-body -sS -X POST \
+      -H "Authorization: Bearer $TOKEN" \
+      -H "Accept: application/vnd.github+json" \
+      -H "X-GitHub-Api-Version: 2022-11-28" \
+      https://api.github.com/repos/manuel-rtsch/sidetrack-pack/dispatches \
+      -d '{"event_type":"app-released"}'
+    echo "Dispatched app-released to manuel-rtsch/sidetrack-pack"
