@@ -1,0 +1,8 @@
+[
+  {
+    "name": "Sidetrack",
+    "package": "io.github.manuelrtsch.sidetrack",
+    "repo": "manuel-rtsch/Sidetrack",
+    "asset": "*-arm64-v8a.apk"
+  }
+]

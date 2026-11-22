@@ -1,0 +1,147 @@
+name: Publish App Pack
+
+# Builds the signed F-Droid index from the APKs on Sidetrack's GitHub Releases
+# and deploys it to GitHub Pages. Stateless: nothing under repo/ is committed.
+#
+# Triggers:
+#   * repository_dispatch (app-released) — sent by Sidetrack's own release
+#     workflow, so a new version is in the pack minutes after it ships.
+#   * workflow_dispatch — the manual path, and the recovery path.
+#   * weekly cron — a safety net if a dispatch is ever missed.
+
+on:
+  workflow_dispatch:
+  repository_dispatch:
+    types: [app-released]
+  schedule:
+    - cron: '17 4 * * 1'
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never let two publishes race on the Pages deployment.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # Pinned: `fdroid update`'s output and config syntax move between minor
+      # versions, and the pack must be reproducible from a bare checkout.
+      - name: Install fdroidserver
+        run: pip install "fdroidserver==2.4.5"
+
+      # fdroidserver signs entry.jar with apksigner from Android build-tools.
+      # Fail loudly here rather than with a confusing error deep inside
+      # `fdroid update`.
+      - name: Locate apksigner
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          apksigner=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -1)
+          if [ -z "$apksigner" ]; then
+            echo "::error::No apksigner found under $ANDROID_HOME/build-tools."
+            exit 1
+          fi
+          echo "found: $apksigner"
+
+      - name: Restore repo index keystore
+        env:
+          KEYSTORE_B64: ${{ secrets.SIDETRACK_REPO_KEYSTORE_B64 }}
+        run: |
+          if [ -z "$KEYSTORE_B64" ]; then
+            echo "::error::Secret SIDETRACK_REPO_KEYSTORE_B64 is not set. See README.md."
+            exit 1
+          fi
+          printf '%s' "$KEYSTORE_B64" | base64 -d > sidetrack-repo.p12
+          chmod 0600 sidetrack-repo.p12
+          # config.yml references this as a literal path, because
+          # `keystore: {env: ...}` is broken upstream (fdroidserver#870).
+
+      - name: Fetch release APKs
+        env:
+          # The default token can read releases from this public repo. If
+          # Sidetrack ever goes private, set APPS_READ_TOKEN to a PAT.
+          GH_TOKEN: ${{ secrets.APPS_READ_TOKEN != '' && secrets.APPS_READ_TOKEN || secrets.GITHUB_TOKEN }}
+        run: ./scripts/fetch-apks.sh
+
+      - name: Build signed index
+        env:
+          KEYSTOREPASS: ${{ secrets.KEYSTOREPASS }}
+          KEYPASS: ${{ secrets.KEYPASS }}
+        run: |
+          chmod 0600 config.yml
+          mkdir -p repo/icons
+          cp icon.png repo/icons/icon.png
+          fdroid update -c --pretty --use-date-from-apk
+
+      # An APK with no metadata/<pkg>.yml is silently dropped from the index with
+      # only a warning, so never let an empty or short pack publish quietly. This
+      # also re-checks every APK's sha256 and the configured address.
+      - name: Verify the index
+        run: python3 scripts/verify-index.py
+
+      - name: Stage Pages artifact
+        run: |
+          mkdir -p _site/fdroid
+          cp -r repo _site/fdroid/repo
+          # No CNAME file: the address is the GitHub Pages project URL for now.
+          # If a custom domain is added later, config.yml's repo_url must NOT
+          # change — the domain is pointed at this existing URL, so no published
+          # QR or installed client is affected.
+          #
+          # The fingerprint is injected from the artefact that was just built, not
+          # typed into the page, so the published value cannot disagree with what
+          # a client pins. A page whose fingerprint does not match the live index
+          # is worse than no fingerprint: it trains people past the warning.
+          fp=$(./scripts/fingerprint.sh)
+          sed "s/__FINGERPRINT__/$fp/" web/index.html > _site/index.html
+          ! grep -q __FINGERPRINT__ _site/index.html
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - id: deploy
+        uses: actions/deploy-pages@v4
+
+      # A green deploy does not prove the pack is usable. Check the two things a
+      # client actually fetches: the signed index, and the APK it points at.
+      - name: Smoke-test the published pack
+        run: |
+          base=$(python3 -c "import yaml;print(yaml.safe_load(open('config.yml'))['repo_url'])")
+          for f in entry.jar index-v2.json; do
+            code=$(curl -sS -o /dev/null -w '%{http_code}' "$base/$f")
+            echo "$f -> $code"
+            [ "$code" = 200 ] || { echo "::error::$base/$f returned $code"; exit 1; }
+          done
+          apk=$(python3 -c "import json;d=json.load(open('repo/index-v2.json'));p=sorted(d['packages'])[0];print(sorted(d['packages'][p]['versions'].values(), key=lambda v: v['manifest']['versionCode'])[-1]['file']['name'])")
+          code=$(curl -sS -o /dev/null -w '%{http_code}' -r 0-1023 "$base$apk")
+          echo "$apk -> $code"
+          [ "$code" = 200 ] || [ "$code" = 206 ] || { echo "::error::$base$apk returned $code"; exit 1; }
+
+      - name: Fingerprint
+        run: |
+          echo "### Sidetrack App Pack fingerprint" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          ./scripts/fingerprint.sh | tee -a "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"

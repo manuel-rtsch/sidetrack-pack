@@ -1,0 +1,32 @@
+# Sidetrack App Pack — fdroidserver config.
+#
+# repo_url is PERMANENT. It is baked into the signed index, stored by every
+# client that adds the pack, and printed into every QR code ever published.
+# Changing the host later is free (swap DNS, keep the address). Changing the
+# address strands every printed QR and every installed client. Do not edit it
+# casually, and do not edit it after the first publish at all.
+repo_url: https://manuel-rtsch.github.io/sidetrack-pack/fdroid/repo
+
+repo_name: Sidetrack
+repo_description: >-
+  Sidetrack — a keypad-first music player for the Sidephone SP-01. Spotify,
+  Plex, Jellyfin and the Subsonic family. An independent project, not made by
+  any of the services it connects to.
+repo_icon: icon.png
+
+# Literal path, NOT {env: ...} — `keystore: {env: ...}` is broken upstream
+# (fdroidserver#870): fill_config_defaults path-expands `keystore` before lazy
+# env resolution. CI writes this file from a base64 secret before running.
+keystore: sidetrack-repo.p12
+repo_keyalias: sidetrack
+
+# {env: VAR} IS the correct secrets syntax here (fdroidserver 2.4.5). Not ${VAR}.
+keystorepass: {env: KEYSTOREPASS}
+keypass: {env: KEYPASS}
+
+# Archiving disabled: every fetched version stays in the MAIN index. This is
+# load-bearing. scripts/fetch-apks.sh deliberately fetches the last few releases
+# so that a client holding a stale index can still download the filename it
+# knows about. Archiving would move exactly those APKs into an archive repo no
+# client is subscribed to, reintroducing the 404 this prevents.
+archive_older: 0
