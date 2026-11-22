@@ -9,9 +9,10 @@ repo_url: https://manuel-rtsch.github.io/sidetrack-pack/fdroid/repo
 
 repo_name: Sidetrack
 repo_description: >-
-  Sidetrack — a keypad-first music player for the Sidephone SP-01. Spotify,
-  Plex, Jellyfin and the Subsonic family. An independent project, not made by
-  any of the services it connects to.
+  Sidetrack is a music player for the Sidephone SP-01, built around its keypad.
+  It plays from Spotify, Plex, Jellyfin and Subsonic-compatible servers such as
+  Navidrome. It is an independent project, not affiliated with Sidephone or
+  any of these services.
 repo_icon: icon.png
 
 # Literal path, NOT {env: ...} — `keystore: {env: ...}` is broken upstream
